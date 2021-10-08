@@ -1,0 +1,5 @@
+.venv/**
+*.json
+*.zip
+.scannerwork/**
+__pycache__/**
