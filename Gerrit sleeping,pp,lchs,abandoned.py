@@ -1,184 +1,227 @@
 # -*- coding: utf-8 -*-
 """
-
-
 @author: Shirin
 """
 
-import json 
-import numpy as np
-import math
+from datetime import datetime
 import pandas as pd
-from pandas import DataFrame
 from scipy.stats import norm 
-from pandas.io.json import json_normalize
 import matplotlib.pyplot as plt
+
+# constants: general
+NUM_OF_SECONDS_IN_ONE_DAY = 86400
+LOG_MESSAGE_TRIGGER_INDEX = 1000
 # read jasın eclipse data
-df = pd.read_json (r'qt_2017-01-01.json', lines=True) 
+cr_data_raw_json = pd.read_json (r'libreoffice_cr_data.json', lines=True) 
 
 # eliminate the NEW  commits # we dont eliminate abandoned commits to see abandence impact in the smells, so the ratio of each smell may change 
-data = pd.json_normalize(df['data'])
-d = data.iloc[0]["status"]
-data = data[data.status != 'NEW']
-#data = data[data.status != 'ABANDONED'] 
+cr_data_normalized_json = pd.json_normalize(cr_data_raw_json['data'])
+cr_data_normalized_json = cr_data_normalized_json[cr_data_normalized_json.status != 'NEW']
+
 # reseting indices of dataframe 
-data = data.reset_index()
+cr_data_normalized_json = cr_data_normalized_json.reset_index()
 
 # reading nested jason to creat comments list of dataframe
-comments = []
-for index,row in data.iterrows():
-    comments.append(pd.json_normalize(row['comments']))
+cr_data_comments = []
+for index,row in cr_data_normalized_json.iterrows():
+    cr_data_comments.append(pd.json_normalize(row['comments']))
+    if index % LOG_MESSAGE_TRIGGER_INDEX == 0:
+        print(f'{index} comments objects normalized!')
+print("\nAll comments normalized! \n")
+
 
 # reading nested jason to creat patchSets list of dataframe
-patchSets = []
-for index,row in data.iterrows():
-    patchSets.append(pd.json_normalize(row['patchSets']))
-    
+cr_data_patchsets = []
+for index,row in cr_data_normalized_json.iterrows():
+    cr_data_patchsets.append(pd.json_normalize(row['patchSets']))
+    if index % LOG_MESSAGE_TRIGGER_INDEX == 0:
+        print(f'{index} patchsets objects normalized!')
 
-    
-
+print("\nAll patchsets normalized! \n")
+# print(datetime.now())    
 
 # calculating time of completion of each commit review
 # droping commits with Nan reviewer names 
 # droping last operation of a review if it is done by a Bot
-Seconds_In_Day = 86400
-TimeDiff = []
-PR_Iterations = []
+pr_completion_duration = []
+pr_num_of_iterations = []
 # number of iterations and review completion time for each PR
-for index in range (len(comments)): # for each merged commit 
-    Iterations = 0 # number of iterations in each PR
-    commentDataframe = comments[index]
-    last = commentDataframe.iloc[-1] # last operation of reviewing a PR
-    rows = len(commentDataframe.index)-1 # number of operations in reviewing a PR
-    if (  last["reviewer.name"] == last["reviewer.name"]  ): # if reviewer name of last row is not Nan 
-        if (last["reviewer.name"].find("Bot") != -1): # if the reviewer of last task is a Bot 
-            commentDataframe.drop(commentDataframe.tail(1).index,inplace =True)  # drop the last row since it is a Bot 
-    for indx in range (len(commentDataframe)):
-        if (commentDataframe.iloc[indx]["message"].find('Uploaded') != -1): # each Upload show the start of iteration in the reviewing process 
-            Iterations = Iterations + 1
+for index in range (len(cr_data_comments)): # for each merged commit 
+    num_of_iterations = 0 # number of iterations in each PR
+    current_pr_comments = cr_data_comments[index]
+    last_comment = current_pr_comments.iloc[-1] # last operation of reviewing a PR
+    num_of_comments = len(current_pr_comments.index)-1 # number of operations in reviewing a PR
+    
+    if (  last_comment["reviewer.name"] == last_comment["reviewer.name"]  ): # if reviewer name of last row is not Nan 
+        if (last_comment["reviewer.name"].find("Bot") != -1): # if the reviewer of last task is a Bot 
+            current_pr_comments.drop(current_pr_comments.tail(1).index,inplace =True)  # drop the last row since it is a Bot 
+    
+    for indx in range (len(current_pr_comments)):
+        if (current_pr_comments.iloc[indx]["message"].find('Uploaded') != -1): # each Upload show the start of iteration in the reviewing process 
+            num_of_iterations = num_of_iterations + 1
+
     # substract time stamp of last review operation from first review operation         
-    diff = commentDataframe.tail(1)["timestamp"].iloc[0] - commentDataframe.head(1)["timestamp"].iloc[0]
-    diff = diff / Seconds_In_Day# conver seconds to days 
-    TimeDiff.append(diff) # dataframe of time of completion of PR reviews 
-    PR_Iterations.append(Iterations) # dataframe of iterations in each PR 
-# sleeping reviews and ping pong smell impact     
-Average_SleepingReview_completion_time = 0 # average of time of completion of all sleeping reviews
-Average_nonsleepingReviews_completion_time = 0 # average of time of completion of all reviews other than sleeping reviews 
-sleeping_smell = 0 # number of sleeping reviews
-Nonsleeping_smell = 0 # number of non-sleeping reviews
-Sleeping_Threshold = 2 #2 days
-Ping_Poong_Smell_Uploading_Threshold = 3 # after 3 iterations of uploading and getting feedback from reviewers, the ping pong smell occures
-Sleeping_PingPong_smell = 0 # sleeping reviews with more than 3 iterations 
-Average_iterations_sleepingrevs = 0 # average number of iterations in sleeping reviews
-Average_iterations_Nonsleepingrevs = 0 # average number of iterations in Non sleeping reviews
-Sleeping_Reviews_abandonment_Impact = 0
-for index in range (len(TimeDiff)):
-    if (TimeDiff[index]>Sleeping_Threshold): # if review takes more than two day, it is sleeping review
-        Average_SleepingReview_completion_time  = Average_SleepingReview_completion_time  + TimeDiff[index]
-        sleeping_smell =sleeping_smell + 1
-        if data.iloc[index]["status"] == "ABANDONED":
-            Sleeping_Reviews_abandonment_Impact = Sleeping_Reviews_abandonment_Impact + 1
-        if PR_Iterations[index] > Ping_Poong_Smell_Uploading_Threshold: # if the number of iterations in the sleeping reviews are more than 3
-            Sleeping_PingPong_smell = Sleeping_PingPong_smell + 1 
-        Average_iterations_sleepingrevs = Average_iterations_sleepingrevs + PR_Iterations[index]
+    current_pr_time_difference = current_pr_comments.tail(1)["timestamp"].iloc[0] - current_pr_comments.head(1)["timestamp"].iloc[0]
+    current_pr_time_difference = current_pr_time_difference / NUM_OF_SECONDS_IN_ONE_DAY# conver seconds to days 
+    pr_completion_duration.append(current_pr_time_difference) # dataframe of time of completion of PR reviews 
+    pr_num_of_iterations.append(num_of_iterations) # dataframe of iterations in each PR 
+
+
+## SLEEPING REVIEWS smell x PING PONG smell ##
+
+# vars + constants: sleeping reviews
+SLEEPING_SMELL_THRESHOLD_DAYS = 2 #2 days
+sleeping_reviews_count = 0 # number of sleeping reviews
+sleeping_reviews_sum_completion_time = 0 # average of time of completion of all sleeping reviews
+
+# vars: non-sleeping reviews
+nonsleeping_reviews_count = 0 # number of non-sleeping reviews
+nonsleeping_reviews_sum_completion_time = 0 # average of time of completion of all reviews other than sleeping reviews 
+nonsleeping_reviews_sum_num_of_iterations = 0 # average number of iterations in Non sleeping reviews
+
+# vars + constants: sleeping reviews + ping pong reviews 
+PING_PONG_SMELL_LOOP_THRESHOLD = 3 # after 3 iterations of uploading and getting feedback from reviewers, the ping pong smell occures
+sleeping_reviews_sum_num_of_iterations = 0 # average number of iterations in sleeping reviews
+sleeping_reviews_with_ping_pong_smell_count = 0 # sleeping reviews with more than 3 iterations 
+
+# vars: sleeping reviews + abandoned reviews
+sleeping_reviews_abandoned_count = 0
+
+for index in range (len(pr_completion_duration)):
+    if (pr_completion_duration[index]>SLEEPING_SMELL_THRESHOLD_DAYS): # if review takes more than two day, it is sleeping review
+        sleeping_reviews_sum_completion_time  = sleeping_reviews_sum_completion_time  + pr_completion_duration[index]
+        sleeping_reviews_count =sleeping_reviews_count + 1
+        
+        if cr_data_normalized_json.iloc[index]["status"] == "ABANDONED":
+            sleeping_reviews_abandoned_count = sleeping_reviews_abandoned_count + 1
+        
+        if pr_num_of_iterations[index] > PING_PONG_SMELL_LOOP_THRESHOLD: # if the number of iterations in the sleeping reviews are more than 3
+            sleeping_reviews_with_ping_pong_smell_count = sleeping_reviews_with_ping_pong_smell_count + 1 
+        sleeping_reviews_sum_num_of_iterations = sleeping_reviews_sum_num_of_iterations + pr_num_of_iterations[index]
 
     else :
-         Average_nonsleepingReviews_completion_time = Average_nonsleepingReviews_completion_time + TimeDiff[index]
-         Nonsleeping_smell = Nonsleeping_smell + 1
-         Average_iterations_Nonsleepingrevs = Average_iterations_Nonsleepingrevs + PR_Iterations[index]
+         nonsleeping_reviews_sum_completion_time = nonsleeping_reviews_sum_completion_time + pr_completion_duration[index]
+         nonsleeping_reviews_count = nonsleeping_reviews_count + 1
+         nonsleeping_reviews_sum_num_of_iterations = nonsleeping_reviews_sum_num_of_iterations + pr_num_of_iterations[index]
 # averages  
-Average_SleepingReview_completion_time = Average_SleepingReview_completion_time / sleeping_smell
-Average_nonsleepingReviews_completion_time  = Average_nonsleepingReviews_completion_time  / Nonsleeping_smell 
-Average_iterations_sleepingrevs = Average_iterations_sleepingrevs / sleeping_smell
-Average_iterations_Nonsleepingrevs = Average_iterations_Nonsleepingrevs / Nonsleeping_smell
+sleeping_reviews_mean_completion_time = sleeping_reviews_sum_completion_time / sleeping_reviews_count
+nonsleeping_reviews_mean_completion_time  = nonsleeping_reviews_sum_completion_time  / nonsleeping_reviews_count 
+sleeping_reviews_mean_num_of_iterations = sleeping_reviews_sum_num_of_iterations / sleeping_reviews_count
+nonsleeping_reviews_mean_num_of_iterations = nonsleeping_reviews_sum_num_of_iterations / nonsleeping_reviews_count
+
+
 # large changeset smell and reviewer's negligence impact, ping pong smell impact and completion time impact
-LCHS_smell = 0 #large changesets smell freq 
-SCHS = 0 # frequency of small changesets 
-MCHS = 0 # frequency of meduim changesets 
-LCHS_No_Comment_Impact = 0 # reviewer's negligence impact in large changesets showed by no comment reviews 
-MCHS_No_Comment_Impact =0 # number of no comment reviews for medium changesets
-SCHS_No_Comment_Impact = 0 # number of no comment reviews for small changesets 
-Average_LCHS_Comments = 0 # average number of comments in large changesets 
-Average_MCHS_Comments = 0 # average number of comments in medium changesets 
-Average_SCHS_Comments  = 0 # # average number of comments in small changesets 
-No_Comment_Threshold = 0 
-Large_changeset_Threshold = 200
-Small_changeset_Threshold = 50
-LCHS_PingPong_smell = 0 # frequency of ping pong smell in large changesets 
-Average_LCHS_Iteration = 0 # average number of iterations in large changesets
-Average_MCHS_Iteration = 0
-Average_SCHS_Iteration = 0 
-LCHS_Time_Impact = 0
-Average_review_completion_time_LCHS = 0 
-LCHS_abandonment_Impact = 0  
-Average_review_completion_time_MCHS = 0
-Average_review_completion_time_SCHS = 0
-for index in range (len(comments)):
+# constants: changeset size and comments
+THRESHOLD_FOR_NO_COMMENTS_SMELL = 0 
+THRESHOLD_LOC_FOR_LARGE_CHANGESET = 200
+THRESHOLD_LOC_FOR_SMALL_CHANGESET = 50
+
+# vars: changeset size counts
+large_changeset_reviews_count = 0 #large changesets smell freq 
+small_changeset_reviews_count = 0 # frequency of small changesets 
+medium_changeset_reviews_count = 0 # frequency of meduim changesets 
+
+# vars: comment counts by changeset size
+large_changeset_reviews_no_comment_count = 0 # reviewer's negligence impact in large changesets showed by no comment reviews 
+medium_changeset_reviews_no_comment_count =0 # number of no comment reviews for medium changesets
+small_changeset_reviews_no_comment_count = 0 # number of no comment reviews for small changesets 
+large_changeset_reviews_mean_comment_count = 0 # average number of comments in large changesets 
+medium_changeset_reviews_mean_comment_count = 0 # average number of comments in medium changesets 
+small_changeset_reviews_mean_comment_count  = 0 # # average number of comments in small changesets 
+
+# vars: ping-pong frequency by changeset size
+large_changeset_reviews_with_ping_pong_count = 0 # frequency of ping pong smell in large changesets 
+large_changeset_mean_iterations = 0 # average number of iterations in large changesets
+medium_changeset_mean_iterations = 0
+small_changeset_mean_iterations = 0 
+
+# vars: review completion duration by changeset size
+large_changeset_mean_review_completion_time = 0 
+medium_changeset_mean_review_completion_time = 0
+medium_changeset_mean_review_completion_time = 0
+large_changeset_abandoned_review_count = 0  
+large_changeset_sleeping_reviews_count = 0
+
+for index in range (len(cr_data_comments)):
     commentCount = 0 # number of comments in each review is zero at first, during the process it will be added under some conditions
     LOC_changes = 0 # lines of codes in each PR
-    instance_comment = comments[index]
-    patchSetsDataframe = patchSets[index]
+    current_review_comments = cr_data_comments[index]
+    current_review_patchsets = cr_data_patchsets[index]
      # calculating number of reviewed changed lines of code
-    for indx in range (len(patchSetsDataframe.index)):
-        if (patchSetsDataframe.iloc[indx]['kind'] == "REWORK"): # only REWORK type operations are taken into consideration 
-            LOC_changes =  LOC_changes +  abs(patchSetsDataframe.iloc[indx]['sizeInsertions']) # only inserted lines are reviewe, deleted lines are reviewed in previous operations, so ther are not considered 
-        for indx in range (len(instance_comment)):
-            if "comment)" in instance_comment.iloc[indx]["message"]: # calculating number of comments in each PR mentioned in message field in the data 
+    for indx in range (len(current_review_patchsets.index)):
+        if (current_review_patchsets.iloc[indx]['kind'] == "REWORK"): # only REWORK type operations are taken into consideration 
+            LOC_changes =  LOC_changes +  abs(current_review_patchsets.iloc[indx]['sizeInsertions']) # only inserted lines are reviewe, deleted lines are reviewed in previous operations, so ther are not considered 
+        
+        for indx in range (len(current_review_comments)):
+            if "comment)" in current_review_comments.iloc[indx]["message"]: # calculating number of comments in each PR mentioned in message field in the data 
                 commentCount = commentCount+1
-            if "comments)" in instance_comment.iloc[indx]["message"]: 
-                commentsString = instance_comment.iloc[indx]["message"].split("(")[1].split(" comments")[0]
+           
+            if "comments)" in current_review_comments.iloc[indx]["message"]: 
+                commentsString = current_review_comments.iloc[indx]["message"].split("(")[1].split(" comments")[0]
+                
                 if (len(commentsString)<3):
                     commentCount = commentCount + int(commentsString)
-    if LOC_changes > Large_changeset_Threshold:
-        if data.iloc[index]["status"] == "ABANDONED":
-            LCHS_abandonment_Impact = LCHS_abandonment_Impact + 1
-        # large changeset smell
-        if (TimeDiff[index]>Sleeping_Threshold): # if review takes more than two day, it is sleeping review
-            Average_review_completion_time_LCHS  = Average_review_completion_time_LCHS  + TimeDiff[index]
-            LCHS_Time_Impact = LCHS_Time_Impact + 1
-        if PR_Iterations[index] > Ping_Poong_Smell_Uploading_Threshold: # ping pong smell
-            LCHS_PingPong_smell = LCHS_PingPong_smell + 1  
-            Average_LCHS_Iteration = Average_LCHS_Iteration + PR_Iterations[index]
-        LCHS_smell = LCHS_smell + 1
-        Average_LCHS_Comments = Average_LCHS_Comments + commentCount
-        if (commentCount == No_Comment_Threshold): # reviewers negligence impact 
-            LCHS_No_Comment_Impact = LCHS_No_Comment_Impact + 1
-    if Small_changeset_Threshold < LOC_changes < Large_changeset_Threshold:
-        MCHS = MCHS + 1
-        Average_MCHS_Comments = Average_MCHS_Comments + commentCount
-        Average_MCHS_Iteration = Average_MCHS_Iteration + PR_Iterations[index]
-        Average_review_completion_time_MCHS  = Average_review_completion_time_MCHS  + TimeDiff[index]
-    if LOC_changes < Small_changeset_Threshold:
-        SCHS = SCHS + 1
-        Average_SCHS_Comments= Average_SCHS_Comments + commentCount
-        Average_SCHS_Iteration = Average_SCHS_Iteration + PR_Iterations[index]
-        Average_review_completion_time_SCHS  = Average_review_completion_time_SCHS  + TimeDiff[index]
+    
+    if LOC_changes > THRESHOLD_LOC_FOR_LARGE_CHANGESET:
+        if cr_data_normalized_json.iloc[index]["status"] == "ABANDONED":
+            large_changeset_abandoned_review_count = large_changeset_abandoned_review_count + 1
         
-Average_LCHS_Comments = Average_LCHS_Comments / LCHS_smell
-Average_MCHS_Comments = Average_MCHS_Comments / MCHS
-Average_SCHS_Comments = Average_SCHS_Comments / SCHS
-Average_LCHS_Iteration = Average_LCHS_Iteration / LCHS_PingPong_smell      
-Average_review_completion_time_LCHS = Average_review_completion_time_LCHS / LCHS_Time_Impact
-Average_MCHS_Iteration = Average_MCHS_Iteration / MCHS
-Average_SCHS_Iteration = Average_SCHS_Iteration / SCHS
-Average_review_completion_time_MCHS = Average_review_completion_time_MCHS / MCHS
-Average_review_completion_time_SCHS = Average_review_completion_time_SCHS / SCHS 
+        # large changeset smell
+        large_changeset_reviews_count = large_changeset_reviews_count + 1
+        large_changeset_reviews_mean_comment_count = large_changeset_reviews_mean_comment_count + commentCount
+
+        if (pr_completion_duration[index] > SLEEPING_SMELL_THRESHOLD_DAYS): # if review takes more than two day, it is sleeping review
+            large_changeset_mean_review_completion_time  = large_changeset_mean_review_completion_time  + pr_completion_duration[index]
+            large_changeset_sleeping_reviews_count = large_changeset_sleeping_reviews_count + 1
+        
+        if pr_num_of_iterations[index] > PING_PONG_SMELL_LOOP_THRESHOLD: # ping pong smell
+            large_changeset_reviews_with_ping_pong_count = large_changeset_reviews_with_ping_pong_count + 1  
+            large_changeset_mean_iterations = large_changeset_mean_iterations + pr_num_of_iterations[index]
+        
+        if (commentCount == THRESHOLD_FOR_NO_COMMENTS_SMELL): # reviewers negligence impact 
+            large_changeset_reviews_no_comment_count = large_changeset_reviews_no_comment_count + 1
+    
+    if THRESHOLD_LOC_FOR_SMALL_CHANGESET < LOC_changes < THRESHOLD_LOC_FOR_LARGE_CHANGESET:
+        medium_changeset_reviews_count = medium_changeset_reviews_count + 1
+        medium_changeset_reviews_mean_comment_count = medium_changeset_reviews_mean_comment_count + commentCount
+        medium_changeset_mean_iterations = medium_changeset_mean_iterations + pr_num_of_iterations[index]
+        medium_changeset_mean_review_completion_time  = medium_changeset_mean_review_completion_time  + pr_completion_duration[index]
+    
+    if LOC_changes < THRESHOLD_LOC_FOR_SMALL_CHANGESET:
+        small_changeset_reviews_count = small_changeset_reviews_count + 1
+        small_changeset_reviews_mean_comment_count= small_changeset_reviews_mean_comment_count + commentCount
+        small_changeset_mean_iterations = small_changeset_mean_iterations + pr_num_of_iterations[index]
+        medium_changeset_mean_review_completion_time  = medium_changeset_mean_review_completion_time  + pr_completion_duration[index]
+        
+large_changeset_reviews_mean_comment_count = large_changeset_reviews_mean_comment_count / large_changeset_reviews_count
+medium_changeset_reviews_mean_comment_count = medium_changeset_reviews_mean_comment_count / medium_changeset_reviews_count
+small_changeset_reviews_mean_comment_count = small_changeset_reviews_mean_comment_count / small_changeset_reviews_count
+large_changeset_mean_iterations = large_changeset_mean_iterations / large_changeset_reviews_with_ping_pong_count      
+large_changeset_mean_review_completion_time = large_changeset_mean_review_completion_time / large_changeset_sleeping_reviews_count
+medium_changeset_mean_iterations = medium_changeset_mean_iterations / medium_changeset_reviews_count
+small_changeset_mean_iterations = small_changeset_mean_iterations / small_changeset_reviews_count
+medium_changeset_mean_review_completion_time = medium_changeset_mean_review_completion_time / medium_changeset_reviews_count
+medium_changeset_mean_review_completion_time = medium_changeset_mean_review_completion_time / small_changeset_reviews_count 
              
 # ping pong smell and abandance impact and review completion time impact 
-Ping_Pong_smell = 0
-Ping_Pong_abandonment_impact = 0 
-Ping_Pong_Time_Impact = 0
-Average_Ping_Pong_Review_Completion_Time = 0
-for index in range (len(comments)):
-    if PR_Iterations[index] > Ping_Poong_Smell_Uploading_Threshold: # ping pong smell
-        Ping_Pong_smell = Ping_Pong_smell + 1
-        if data.iloc[index]["status"] == "ABANDONED":
-            Ping_Pong_abandonment_impact = Ping_Pong_abandonment_impact + 1 
-        if  (TimeDiff[index]>Sleeping_Threshold):
-            Ping_Pong_Time_Impact = Ping_Pong_Time_Impact + 1
-            Average_Ping_Pong_Review_Completion_Time = Average_Ping_Pong_Review_Completion_Time + TimeDiff[index]
+ping_pong_reviews_smell_count = 0
+ping_pong_reviews_abandoned_count = 0 
+ping_pong_reviews_sleeping_count = 0
+ping_pong_reviews_sum_completion_time = 0
+
+for index in range (len(cr_data_comments)):
+    
+    if pr_num_of_iterations[index] > PING_PONG_SMELL_LOOP_THRESHOLD: # ping pong smell
+        ping_pong_reviews_smell_count = ping_pong_reviews_smell_count + 1
+        
+        if cr_data_normalized_json.iloc[index]["status"] == "ABANDONED":
+            ping_pong_reviews_abandoned_count = ping_pong_reviews_abandoned_count + 1 
+        
+        if  (pr_completion_duration[index] > SLEEPING_SMELL_THRESHOLD_DAYS):
+            ping_pong_reviews_sleeping_count = ping_pong_reviews_sleeping_count + 1
+            ping_pong_reviews_sum_completion_time = ping_pong_reviews_sum_completion_time + pr_completion_duration[index]
             
-Average_Ping_Pong_Review_Completion_Time = Average_Ping_Pong_Review_Completion_Time / Ping_Pong_Time_Impact
+ping_pong_reviews_mean_completion_time = ping_pong_reviews_sum_completion_time / ping_pong_reviews_sleeping_count
             
 
 
