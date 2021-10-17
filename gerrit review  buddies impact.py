@@ -2,10 +2,7 @@
 """
 @author: Shirin
 """
-
-import json 
 import numpy as np
-import math
 import pandas as pd
 from pandas import DataFrame
 from scipy.stats import norm 
@@ -46,15 +43,12 @@ for index,row in cr_data_normalized.iterrows():
 # Projects possible Bots
 Eclipse_Bots = {"EGit Bot","JGit Bot","Platform Bot","CI Bot","OSEE Bot","BaSyx Bot","Eclipse Genie", "Trace Compass Bot","JDT Bot","Equinox Bot","CDT Bot","M2E Bot","PDE Bot","Orbit Bot","CBI Bot","EASE Bot","QVT-OML Bot", "Jubula Bot","Linux Tools Bot","Xtext Bot","Sirius Bot","DLTK Bot","StatET Bot","Nebula Bot","SWTBot Bot","EMFStore Bot"}    
 Wireshark_Bots = {"Petri Dish Buildbot", "Wireshark code review", "human rights"}
-LiberOffice_Bots = {"Jenkins", "Jenkins CollaboraOffice", "Pootle bot, LibreOﬃciant", "Weblate", "Gerrit Code Review", "JP", "libreoffice lhm"}
+LiberOffice_Bots = {"Jenkins", "Jenkins CollaboraOffice", "Pootle bot", "LibreOﬃciant", "Weblate", "Gerrit Code Review", "JP", "libreoffice lhm"}
 QT_Bots = { "Qt Sanity Bot","Qt CI Bot","Qt Cherry-pick Bot","Qt Submodule Update Bot","Qbs CI Bot","Qt LanceBot","Qt CMake Build Bot","Qt Wayland Headless Tests Bot","Qt Continuous Integration System","Qt Cleanup Bot", "Qt Doc Bot","Qt Forward Merge Bot", "The Qt Project", "Qt3dStudioBot","Qt CI Test Bot","Continuous Integration (KDAB)"}
 
 #-----------------------------------------------------review buddies smell and time impact--------------------------
-# calculating time of completion of each commit review
+# vars: lists for pull-request time-to-merge,
 pr_completion_times = []
-    
-# empity list of revıewer-author pairs , LOCs of each pair authors, revıewers, and their indices
-# empity list of kinds of operations in each commit review
 author_reviewer_pairs =[]  
 author_names = []
 reviewer_names = []
@@ -100,8 +94,6 @@ for index in range (len(comments)):
                         num_of_comments = num_of_comments + int(comments_string)
                     else:
                         print(comments_string)
-                elif (name_index < 100):
-                    print(current_message)
     
             author_names.append(author_name)
             reviewer_names.append(unique_names_in_current_pr_comments[name_index])
@@ -138,7 +130,8 @@ author_reviewer_pairs.columns = ["freq"]
 mean = author_reviewer_pairs.mean()
 standard_deviation = np.std(author_reviewer_pairs)
 review_buddies_smell_threshold =  int(mean + standard_deviation)
-sleeping_review_time_threshold = 2 # 2 days 
+
+SLEEPING_REVIEW_TIME_THRESHOLD = 2 # 2 days 
 review_buddies_smell_count = 0
 review_buddies_with_sleeping_smell = 0
 review_buddies_mean_review_completion_time = 0 
