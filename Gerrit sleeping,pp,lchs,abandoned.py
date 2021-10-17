@@ -43,17 +43,17 @@ print("\nAll patchsets normalized! \n")
 # calculating time of completion of each commit review
 # droping commits with Nan reviewer names 
 # droping last operation of a review if it is done by a Bot
-pr_completion_duration = []
+pr_completion_times = []
 pr_num_of_iterations = []
 # number of iterations and review completion time for each PR
 for index in range (len(cr_data_comments)): # for each merged commit 
     num_of_iterations = 0 # number of iterations in each PR
     current_pr_comments = cr_data_comments[index]
-    last_comment = current_pr_comments.iloc[-1] # last operation of reviewing a PR
+    last_comment_message = current_pr_comments.iloc[-1] # last operation of reviewing a PR
     num_of_comments = len(current_pr_comments.index)-1 # number of operations in reviewing a PR
     
-    if (  last_comment["reviewer.name"] == last_comment["reviewer.name"]  ): # if reviewer name of last row is not Nan 
-        if (last_comment["reviewer.name"].find("Bot") != -1): # if the reviewer of last task is a Bot 
+    if (  last_comment_message["reviewer.name"] == last_comment_message["reviewer.name"]  ): # if reviewer name of last row is not Nan 
+        if (last_comment_message["reviewer.name"].find("Bot") != -1): # if the reviewer of last task is a Bot 
             current_pr_comments.drop(current_pr_comments.tail(1).index,inplace =True)  # drop the last row since it is a Bot 
     
     for indx in range (len(current_pr_comments)):
@@ -61,9 +61,9 @@ for index in range (len(cr_data_comments)): # for each merged commit
             num_of_iterations = num_of_iterations + 1
 
     # substract time stamp of last review operation from first review operation         
-    current_pr_time_difference = current_pr_comments.tail(1)["timestamp"].iloc[0] - current_pr_comments.head(1)["timestamp"].iloc[0]
-    current_pr_time_difference = current_pr_time_difference / NUM_OF_SECONDS_IN_ONE_DAY# conver seconds to days 
-    pr_completion_duration.append(current_pr_time_difference) # dataframe of time of completion of PR reviews 
+    current_pr_completion_time = current_pr_comments.tail(1)["timestamp"].iloc[0] - current_pr_comments.head(1)["timestamp"].iloc[0]
+    current_pr_completion_time = current_pr_completion_time / NUM_OF_SECONDS_IN_ONE_DAY# conver seconds to days 
+    pr_completion_times.append(current_pr_completion_time) # dataframe of time of completion of PR reviews 
     pr_num_of_iterations.append(num_of_iterations) # dataframe of iterations in each PR 
 
 
@@ -87,9 +87,9 @@ sleeping_reviews_with_ping_pong_smell_count = 0 # sleeping reviews with more tha
 # vars: sleeping reviews + abandoned reviews
 sleeping_reviews_abandoned_count = 0
 
-for index in range (len(pr_completion_duration)):
-    if (pr_completion_duration[index]>SLEEPING_SMELL_THRESHOLD_DAYS): # if review takes more than two day, it is sleeping review
-        sleeping_reviews_sum_completion_time  = sleeping_reviews_sum_completion_time  + pr_completion_duration[index]
+for index in range (len(pr_completion_times)):
+    if (pr_completion_times[index]>SLEEPING_SMELL_THRESHOLD_DAYS): # if review takes more than two day, it is sleeping review
+        sleeping_reviews_sum_completion_time  = sleeping_reviews_sum_completion_time  + pr_completion_times[index]
         sleeping_reviews_count =sleeping_reviews_count + 1
         
         if cr_data_normalized_json.iloc[index]["status"] == "ABANDONED":
@@ -100,7 +100,7 @@ for index in range (len(pr_completion_duration)):
         sleeping_reviews_sum_num_of_iterations = sleeping_reviews_sum_num_of_iterations + pr_num_of_iterations[index]
 
     else :
-         nonsleeping_reviews_sum_completion_time = nonsleeping_reviews_sum_completion_time + pr_completion_duration[index]
+         nonsleeping_reviews_sum_completion_time = nonsleeping_reviews_sum_completion_time + pr_completion_times[index]
          nonsleeping_reviews_count = nonsleeping_reviews_count + 1
          nonsleeping_reviews_sum_num_of_iterations = nonsleeping_reviews_sum_num_of_iterations + pr_num_of_iterations[index]
 # averages  
@@ -170,8 +170,8 @@ for index in range (len(cr_data_comments)):
         large_changeset_reviews_count = large_changeset_reviews_count + 1
         large_changeset_reviews_mean_comment_count = large_changeset_reviews_mean_comment_count + commentCount
 
-        if (pr_completion_duration[index] > SLEEPING_SMELL_THRESHOLD_DAYS): # if review takes more than two day, it is sleeping review
-            large_changeset_mean_review_completion_time  = large_changeset_mean_review_completion_time  + pr_completion_duration[index]
+        if (pr_completion_times[index] > SLEEPING_SMELL_THRESHOLD_DAYS): # if review takes more than two day, it is sleeping review
+            large_changeset_mean_review_completion_time  = large_changeset_mean_review_completion_time  + pr_completion_times[index]
             large_changeset_sleeping_reviews_count = large_changeset_sleeping_reviews_count + 1
         
         if pr_num_of_iterations[index] > PING_PONG_SMELL_LOOP_THRESHOLD: # ping pong smell
@@ -185,13 +185,13 @@ for index in range (len(cr_data_comments)):
         medium_changeset_reviews_count = medium_changeset_reviews_count + 1
         medium_changeset_reviews_mean_comment_count = medium_changeset_reviews_mean_comment_count + commentCount
         medium_changeset_mean_iterations = medium_changeset_mean_iterations + pr_num_of_iterations[index]
-        medium_changeset_mean_review_completion_time  = medium_changeset_mean_review_completion_time  + pr_completion_duration[index]
+        medium_changeset_mean_review_completion_time  = medium_changeset_mean_review_completion_time  + pr_completion_times[index]
     
     if LOC_changes < THRESHOLD_LOC_FOR_SMALL_CHANGESET:
         small_changeset_reviews_count = small_changeset_reviews_count + 1
         small_changeset_reviews_mean_comment_count= small_changeset_reviews_mean_comment_count + commentCount
         small_changeset_mean_iterations = small_changeset_mean_iterations + pr_num_of_iterations[index]
-        medium_changeset_mean_review_completion_time  = medium_changeset_mean_review_completion_time  + pr_completion_duration[index]
+        medium_changeset_mean_review_completion_time  = medium_changeset_mean_review_completion_time  + pr_completion_times[index]
         
 large_changeset_reviews_mean_comment_count = large_changeset_reviews_mean_comment_count / large_changeset_reviews_count
 medium_changeset_reviews_mean_comment_count = medium_changeset_reviews_mean_comment_count / medium_changeset_reviews_count
@@ -217,9 +217,9 @@ for index in range (len(cr_data_comments)):
         if cr_data_normalized_json.iloc[index]["status"] == "ABANDONED":
             ping_pong_reviews_abandoned_count = ping_pong_reviews_abandoned_count + 1 
         
-        if  (pr_completion_duration[index] > SLEEPING_SMELL_THRESHOLD_DAYS):
+        if  (pr_completion_times[index] > SLEEPING_SMELL_THRESHOLD_DAYS):
             ping_pong_reviews_sleeping_count = ping_pong_reviews_sleeping_count + 1
-            ping_pong_reviews_sum_completion_time = ping_pong_reviews_sum_completion_time + pr_completion_duration[index]
+            ping_pong_reviews_sum_completion_time = ping_pong_reviews_sum_completion_time + pr_completion_times[index]
             
 ping_pong_reviews_mean_completion_time = ping_pong_reviews_sum_completion_time / ping_pong_reviews_sleeping_count
             
