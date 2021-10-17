@@ -249,14 +249,18 @@ pr_bypassed_mean_num_of_comments = 0
 for index in range(len(pr_bypassed_list_comments)):
     comments_instance = pr_bypassed_list_comments[index]
     comment_count = 0
+    
     for indxx in range(
         len(comments_instance)
     ):  # this loop calculates number of comments in each PR
         current_message = comments_instance.iloc[indxx]["message"]
+    
         if "comment)" in current_message:  # 1 comment for reviewer
             comment_count = comment_count + 1
+    
         elif "comments)" in current_message:  # several comments
             comment_count_extracted = current_message.split("(")[1].split(" comments")[0]
+    
             if len(comment_count_extracted) < 3:
                 comment_count = comment_count + int(comment_count_extracted)
                 
