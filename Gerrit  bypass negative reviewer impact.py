@@ -1,14 +1,14 @@
-import numpy as np
 import pandas as pd
-from pandas import DataFrame
-from scipy.stats import norm
 from pandas.io.json import json_normalize
 import matplotlib.pyplot as plt
+import pprint as pp
 
 # --------------------------------------reading data ----------------------------------
 
+LOG_MESSAGE_TRIGGER_INDEX = 1000
+
 # review data
-pr_data_raw = pd.read_json("eclipse.json", lines=True)
+pr_data_raw = pd.read_json("eclipse_cr_data.json", lines=True)
 
 # extract nested 'data' column
 pr_data_nested = []
@@ -32,6 +32,9 @@ for index in range(len(pr_data_nested)):
         for index3, row in current_row.iterrows():
             patchsets.append(pd.json_normalize(row["patchSets"]))
             comments.append(pd.json_normalize(row["comments"]))
+    if index % LOG_MESSAGE_TRIGGER_INDEX == 0:
+        print(f"{index} PR objects preprocessed!")
+
 
 # Bots list
 # personally, I would like to have separate text files for each project along with their PR data to import and use them as needed
@@ -69,7 +72,8 @@ WIRESHARK_BOTS = {"Petri Dish Buildbot", "Wireshark code review", "human rights"
 LIBREOFFICE_BOTS = {
     "Jenkins",
     "Jenkins CollaboraOffice",
-    "Pootle bot, LibreOﬃciant",
+    "Pootle bot",
+    "LibreOﬃciant",
     "Weblate",
     "Gerrit Code Review",
     "JP",
@@ -98,7 +102,7 @@ QT_BOTS = {
 
 # this function gets review data, commits, and returns 3 array  patches that have at least one negative vote
 # and bypassed negative reviewer patches
-def bypass_negative_reviewer(comments, bot_list):
+def bypass_negative_reviewer(comments):
     pr_with_negative_vote_comments = []
     pr_with_negative_vote_indices = []
     pr_with_bypass_smell_comments = []
@@ -106,6 +110,9 @@ def bypass_negative_reviewer(comments, bot_list):
     rejection = False
 
     for index in range(len(comments)):
+        if index % LOG_MESSAGE_TRIGGER_INDEX == 0:
+            print(f"{index} PR objects processed!")
+
         current_pr_comments = comments[index]
 
         for indx in range(len(current_pr_comments)):
@@ -132,7 +139,7 @@ def bypass_negative_reviewer(comments, bot_list):
         if (
             current_pr_comments.iloc[0]["reviewer.name"]
             == current_pr_comments.iloc[0]["reviewer.name"]
-            and current_pr_comments.iloc[0]["reviewer.name"] not in bot_list
+            and current_pr_comments.iloc[0]["reviewer.name"] not in ECLIPSE_BOTS
         ):  # if owner name(who uploaded the patch, first row of instance comment ) is not Nan and Bot
             author_name = current_pr_comments.iloc[0]["reviewer.name"]
 
@@ -142,7 +149,7 @@ def bypass_negative_reviewer(comments, bot_list):
                 and current_pr_comments.iloc[indx]["reviewer.name"]
                 == current_pr_comments.iloc[indx]["reviewer.name"]
                 and current_pr_comments.iloc[indx]["reviewer.name"] != author_name
-                and current_pr_comments.iloc[indx]["reviewer.name"] not in bot_list
+                and current_pr_comments.iloc[indx]["reviewer.name"] not in ECLIPSE_BOTS
             ):
                 if (
                     current_pr_comments.iloc[indx]["message"].find("Code-Review-1")
@@ -169,7 +176,9 @@ def bypass_negative_reviewer(comments, bot_list):
                                 )
                                 != -1
                             ):
-                                positive_vote_after_negative_vote = positive_vote_after_negative_vote + 1
+                                positive_vote_after_negative_vote = (
+                                    positive_vote_after_negative_vote + 1
+                                )
 
                     if positive_vote_after_negative_vote == 0:
                         bypass = True
@@ -179,9 +188,7 @@ def bypass_negative_reviewer(comments, bot_list):
             pr_with_bypass_smell_comments.append(
                 pr_with_negative_vote_comments[index]
             )  # bypassed patches comments
-            pr_with_bypass_smell_indices.append(
-                pr_with_negative_vote_indices[index]
-            )
+            pr_with_bypass_smell_indices.append(pr_with_negative_vote_indices[index])
 
     return (
         pr_with_negative_vote_comments,
@@ -191,22 +198,27 @@ def bypass_negative_reviewer(comments, bot_list):
 
 
 # ---------------------------------------calling functions-------------------------------
-pr_with_negative_vote_comments, pr_bypassed_list_comments, pr_bypassed_list_indices = bypass_negative_reviewer(comments)
+(
+    pr_with_negative_vote_comments,
+    pr_bypassed_list_comments,
+    pr_bypassed_list_indices,
+) = bypass_negative_reviewer(comments)
 
 # ------------------------------------------bypass and time impact-------------------------------------
 SECONDS_IN_DAY = 24 * 60 * 60
 SLEEPING_REVIEW_THRESHOLD_IN_DAYS = 2
 pr_bypassed_and_sleeping_count = 0
 pr_bypassed_reviews_mean_completion_time = 0
+
 for index in range(len(pr_bypassed_list_comments)):
     pr_bypassed_comments_instance = pr_bypassed_list_comments[index]
     last_comment = pr_bypassed_comments_instance.iloc[-1]
-    
+
     if (
         last_comment["reviewer.name"] == last_comment["reviewer.name"]
     ):  # if reviewer name of last row is not Nan
         if (
-            last_comment["reviewer.name"] not in bot_list
+            last_comment["reviewer.name"] not in ECLIPSE_BOTS
         ):  # if the reviewer of last task is a Bot
             pr_bypassed_comments_instance.drop(
                 pr_bypassed_comments_instance.tail(1).index, inplace=True
@@ -236,7 +248,7 @@ pr_bypassed_ping_pong_count = 0
 for index in range(len(pr_bypassed_list_comments)):
     ping_pong_count = 0
     comments_instance = pr_bypassed_list_comments[index]
-    
+
     for indx in range(len(comments_instance)):
         if comments_instance.iloc[indx]["message"].find("Uploaded") != -1:
             ping_pong_count = ping_pong_count + 1
@@ -249,23 +261,36 @@ pr_bypassed_mean_num_of_comments = 0
 for index in range(len(pr_bypassed_list_comments)):
     comments_instance = pr_bypassed_list_comments[index]
     comment_count = 0
-    
+
     for indxx in range(
         len(comments_instance)
     ):  # this loop calculates number of comments in each PR
         current_message = comments_instance.iloc[indxx]["message"]
-    
+
         if "comment)" in current_message:  # 1 comment for reviewer
             comment_count = comment_count + 1
-    
+
         elif "comments)" in current_message:  # several comments
-            comment_count_extracted = current_message.split("(")[1].split(" comments")[0]
-    
+            comment_count_extracted = current_message.split("(")[1].split(" comments")[
+                0
+            ]
+
             if len(comment_count_extracted) < 3:
                 comment_count = comment_count + int(comment_count_extracted)
-                
+
     pr_bypassed_mean_num_of_comments = pr_bypassed_mean_num_of_comments + comment_count
     if comment_count == 0:
-        pr_bypassed_reviewer_negligence_count = pr_bypassed_reviewer_negligence_count + 1
+        pr_bypassed_reviewer_negligence_count = (
+            pr_bypassed_reviewer_negligence_count + 1
+        )
 
-pr_bypassed_mean_num_of_comments = pr_bypassed_mean_num_of_comments / len(pr_bypassed_list_comments)
+pr_bypassed_mean_num_of_comments = pr_bypassed_mean_num_of_comments / len(
+    pr_bypassed_list_comments
+)
+
+pp.pprint(f"len(pr): {len(comments)}")
+pp.pprint(f"pr_bypassed_and_sleeping_count: {pr_bypassed_and_sleeping_count}")
+pp.pprint(f"pr_bypassed_reviewer_negligence_count: {pr_bypassed_reviewer_negligence_count}")
+pp.pprint(f"pr_bypassed_ping_pong_count: {pr_bypassed_ping_pong_count}")
+pp.pprint(f"pr_bypassed_mean_num_of_comments: {pr_bypassed_mean_num_of_comments}")
+pp.pprint(f"pr_bypassed_reviews_mean_completion_time: {pr_bypassed_reviews_mean_completion_time}")

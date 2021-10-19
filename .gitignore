@@ -3,3 +3,6 @@
 *.zip
 .scannerwork/**
 __pycache__/**
+devs.txt
+results/**
+plots/**
